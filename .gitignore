@@ -1,0 +1,21 @@
+# 환경 변수 (API 키) — 절대 GitHub에 올라가면 안 됨
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Vercel
+.vercel
+
+# OS / 편집기
+.DS_Store
+Thumbs.db
+.vscode/
+
+# 과제 증빙용 캡처 이미지 (용량 문제로 저장소에는 올리지 않음)
+캡처/
