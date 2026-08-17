@@ -247,3 +247,154 @@ footer p {
 footer a {
   color: var(--bg);
 }
+
+/* ============================================
+   9. 반응형 — 화면 크기별 조정
+
+   위쪽에 쓴 스타일이 기본(데스크톱)이고,
+   아래 @media 안의 내용은 조건이 맞을 때만 덮어씁니다.
+   ============================================ */
+
+/* ---------- 태블릿 (1024px 이하) ---------- */
+@media (max-width: 1024px) {
+
+  main {
+    padding: 0 20px;
+  }
+
+  section {
+    padding: 56px 0;
+  }
+
+  h1 {
+    font-size: 34px;
+  }
+
+  h2 {
+    font-size: 24px;
+  }
+
+  #home {
+    padding: 64px 0;
+  }
+
+  /* 소개 카드를 2개씩 배치되도록 폭을 줄입니다 */
+  #home ul li {
+    max-width: 260px;
+  }
+
+  #navMenu {
+    gap: 20px;
+  }
+}
+
+/* ---------- 모바일 (768px 이하) ---------- */
+@media (max-width: 768px) {
+
+  /* 햄버거 버튼을 보이게 합니다 */
+  #menuToggle {
+    display: block;
+  }
+
+  /* 평소에는 메뉴를 숨겨 둡니다.
+     JavaScript가 open 클래스를 붙이면 펼쳐집니다. (C-4 단계) */
+  #navMenu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    padding: 8px 0;
+  }
+
+  #navMenu.open {
+    display: flex;
+  }
+
+  #navMenu li {
+    border-bottom: 1px solid var(--line);
+  }
+
+  #navMenu li:last-child {
+    border-bottom: none;
+  }
+
+  #navMenu a {
+    display: block;
+    padding: 14px 24px;
+    border-bottom: none;
+  }
+
+  header nav {
+    position: relative;
+    padding: 12px 20px;
+  }
+
+  /* 글자 크기를 화면에 맞게 줄입니다 */
+  h1 {
+    font-size: 27px;
+  }
+
+  h2 {
+    font-size: 21px;
+  }
+
+  h3 {
+    font-size: 18px;
+  }
+
+  body {
+    font-size: 15px;
+  }
+
+  #home {
+    padding: 48px 0;
+  }
+
+  #home > p {
+    font-size: 16px;
+  }
+
+  /* 버튼을 화면 폭에 맞게 넓힙니다 (손가락으로 누르기 쉽게) */
+  #home > a {
+    display: block;
+    width: 100%;
+    padding: 16px 0;
+  }
+
+  /* 가로로 늘어놓던 카드를 세로로 쌓습니다 */
+  #home ul {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #home ul li {
+    max-width: none;
+  }
+
+  section {
+    padding: 44px 0;
+  }
+
+  #result,
+  #savedList {
+    padding: 20px;
+  }
+}
+
+/* ---------- 아주 작은 화면 (400px 이하) ---------- */
+@media (max-width: 400px) {
+
+  main {
+    padding: 0 16px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+}
