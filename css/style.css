@@ -398,3 +398,16 @@ footer a {
     font-size: 24px;
   }
 }
+
+/* ---------- 10. 현재 보고 있는 섹션 표시 (JS가 붙이는 active) ---------- */
+#navMenu a.active {
+  color: var(--brand);
+  border-bottom-color: var(--brand);
+}
+
+@media (max-width: 768px) {
+  #navMenu a.active {
+    border-bottom: none;
+    background: #faf6f0;
+  }
+}
