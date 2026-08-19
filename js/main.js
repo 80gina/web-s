@@ -332,6 +332,7 @@ function renderResult(data) {
   /* ---- 저장 버튼 ---- */
   html += '<div class="result-actions">';
   html += '<button type="button" id="saveBtn" class="btn-outline">보관함에 저장</button>';
+  html += '<button type="button" id="printBtn" class="btn-outline">인쇄 · PDF 저장</button>';
   html += "</div>";
 
   resultBox.innerHTML = html;
@@ -341,6 +342,8 @@ function renderResult(data) {
   document.getElementById("saveBtn").addEventListener("click", function () {
     saveDesign(data);
   });
+
+  document.getElementById("printBtn").addEventListener("click", printResult);
 }
 
 
@@ -432,7 +435,52 @@ contactForm.addEventListener("submit", function (event) {
 
 
 /* ============================================
-   11. 내 보관함 — 브라우저에 결과 저장하기
+   11. 인쇄 · PDF 저장
+
+   PDF 생성 라이브러리를 쓰지 않고 브라우저 인쇄 기능을 씁니다.
+   - 한글 폰트를 따로 넣지 않아도 됩니다 (라이브러리 방식의 가장 큰 걸림돌)
+   - 추가로 내려받는 파일이 없어 화면이 느려지지 않습니다
+   인쇄 대화상자에서 "PDF로 저장"을 고르면 파일이 됩니다.
+   ============================================ */
+
+function printResult() {
+  // 인쇄물 맨 위에 들어갈 안내 줄을 만듭니다.
+  // 종이만 봐도 어떤 조건으로 만든 수업인지 알 수 있어야 합니다.
+  const input = lastRequestData || {};
+
+  const meta = [
+    input.headcount ? input.headcount + "명" : "",
+    input.ageGroup || "",
+    input.duration ? input.duration + "분" : "",
+    input.level || ""
+  ].filter(Boolean).join(" · ");
+
+  const stamp = new Date().toLocaleString("ko-KR", {
+    year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit"
+  });
+
+  // 화면에는 안 보이고 인쇄물에만 나오는 영역입니다 (CSS로 제어)
+  let header = document.getElementById("printHeader");
+
+  if (!header) {
+    header = document.createElement("div");
+    header.id = "printHeader";
+    resultBox.insertBefore(header, resultBox.firstChild);
+  }
+
+  header.innerHTML =
+    '<p class="print-brand">수업 설계소</p>' +
+    '<p class="print-meta">' + escapeHtml(meta) + "</p>" +
+    '<p class="print-stamp">' + escapeHtml(stamp) + " 작성</p>";
+
+  // 브라우저 인쇄 대화상자를 엽니다
+  window.print();
+}
+
+
+/* ============================================
+   12. 내 보관함 — 브라우저에 결과 저장하기
 
    서버에 저장하지 않고 브라우저 저장소를 씁니다.
    - 로그인 없이 바로 쓸 수 있고

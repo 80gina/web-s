@@ -853,3 +853,143 @@ textarea.invalid {
     flex: 1;
   }
 }
+
+/* ============================================
+   14. 인쇄 · PDF 저장용 스타일
+
+   @media print 안의 내용은 "인쇄할 때만" 적용됩니다.
+   화면에는 아무 영향이 없습니다.
+   ============================================ */
+
+/* 인쇄물 머리말 — 화면에서는 숨깁니다 */
+#printHeader {
+  display: none;
+}
+
+@media print {
+
+  /* ---------- 1. 인쇄에 불필요한 것을 전부 숨깁니다 ---------- */
+  /* 종이에 메뉴와 입력 폼이 찍히면 진행표가 뒤로 밀립니다. */
+  header,
+  footer,
+  #home,
+  #saved,
+  #guide,
+  #contact,
+  #designForm,
+  #design > h2,
+  #design > p,
+  .result-actions {
+    display: none !important;
+  }
+
+  /* ---------- 2. 결과만 남기고 여백을 정리합니다 ---------- */
+  body {
+    background: #fff;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  main {
+    max-width: none;
+    padding: 0;
+  }
+
+  section {
+    padding: 0;
+    border: none;
+  }
+
+  #result {
+    background: #fff;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  /* ---------- 3. 인쇄물 머리말을 보이게 합니다 ---------- */
+  #printHeader {
+    display: block;
+    margin-bottom: 14pt;
+    padding-bottom: 8pt;
+    border-bottom: 1.5pt solid #333;
+  }
+
+  .print-brand {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #333;
+    margin: 0;
+  }
+
+  .print-meta {
+    font-size: 12pt;
+    color: #000;
+    margin: 2pt 0 0;
+  }
+
+  .print-stamp {
+    font-size: 9pt;
+    color: #666;
+    margin: 2pt 0 0;
+  }
+
+  /* ---------- 4. 표가 페이지 중간에서 잘리지 않게 합니다 ---------- */
+  .table-wrap {
+    overflow: visible;    /* 화면용 가로 스크롤은 인쇄에서 의미가 없습니다 */
+  }
+
+  .timetable {
+    min-width: 0;
+    width: 100%;
+    font-size: 10pt;
+  }
+
+  /* 한 행이 페이지 경계에서 반으로 잘리는 것을 막습니다 */
+  .timetable tr {
+    page-break-inside: avoid;
+  }
+
+  /* 여러 장이 될 때 표 머리글을 각 장마다 반복합니다 */
+  .timetable thead {
+    display: table-header-group;
+  }
+
+  .timetable th {
+    background: #f2f2f2 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- 5. 제목이 페이지 맨 아래에 혼자 남지 않게 합니다 ---------- */
+  #result h4 {
+    page-break-after: avoid;
+    margin-top: 14pt;
+  }
+
+  .material-list,
+  .caution-list,
+  .balance {
+    page-break-inside: avoid;
+  }
+
+  .material-list {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .material-list li {
+    background: none;
+    padding: 2pt 0;
+  }
+
+  .balance {
+    background: none;
+    border-left: 2pt solid #666;
+  }
+
+  /* ---------- 6. 용지 여백 ---------- */
+  @page {
+    margin: 15mm;
+  }
+}
