@@ -9,7 +9,7 @@ api/ 폴더에 두면 Vercel이 자동으로 위 주소를 만들어 줍니다.
 역할:
   1) 브라우저가 보낸 수업 조건을 받는다
   2) 환경 변수에서 API 키를 꺼낸다 (코드에 키를 적지 않는다)
-  3) Claude에게 수업 설계를 요청한다
+  3) Gemini에게 수업 설계를 요청한다
   4) 결과를 JSON으로 돌려준다
 """
 
@@ -17,14 +17,19 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler
 
-import anthropic
+import requests
 
 
 # ---------- 설정 ----------
 
-MODEL = "claude-sonnet-4-5"     # 사용할 AI 모델
+MODEL = "gemini-2.5-flash"      # 사용할 AI 모델
 MAX_TOKENS = 4000               # 응답 최대 길이
-TIMEOUT_SECONDS = 25.0          # 이 시간을 넘기면 포기한다
+TIMEOUT_SECONDS = 25            # 이 시간을 넘기면 포기한다
+
+API_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "{model}:generateContent".format(model=MODEL)
+)
 
 # 필수 입력 항목 (브라우저에서도 검사하지만, 서버에서도 한 번 더 본다)
 REQUIRED_FIELDS = ["headcount", "ageGroup", "duration", "level", "menu"]
@@ -43,7 +48,7 @@ SYSTEM_PROMPT = """당신은 소규모 요리교실의 수업을 설계하는 �
 - 강사 멘트는 실제로 소리 내어 말할 수 있는 문장으로 씁니다.
 
 반드시 아래 형식의 JSON만 출력합니다.
-설명, 인사말, 코드블록 표시(```)를 절대 붙이지 마십시오.
+설명, 인사말, 코드블록 표시를 절대 붙이지 마십시오.
 
 {
   "title": "수업 제목",
@@ -82,7 +87,7 @@ def build_user_prompt(data):
         "- 만들 음식: {}".format(data["menu"]),
     ]
 
-    notes = data.get("notes", "").strip()
+    notes = str(data.get("notes", "")).strip()
     if notes:
         lines.append("- 강사 특이사항 요청: {}".format(notes))
 
@@ -99,12 +104,11 @@ def build_user_prompt(data):
 def extract_json(text):
     """AI 응답에서 JSON 부분만 뽑아냅니다.
 
-    형식만 출력하라고 지시했지만, 앞뒤에 설명이 붙어 올 가능성이 있습니다.
+    JSON으로 답하라고 지시했지만, 앞뒤에 설명이 붙어 올 가능성이 있습니다.
     그대로 json.loads에 넣으면 실패하므로, 중괄호 구간을 찾아 잘라냅니다.
     """
     text = text.strip()
 
-    # 코드블록 표시가 붙어 온 경우 제거
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
@@ -159,28 +163,56 @@ class handler(BaseHTTPRequestHandler):
 
         # ---------- 3. API 키 꺼내기 ----------
         # 코드에 키를 적지 않고, 실행 환경에서 꺼내 씁니다.
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             self._send(500, {"error": "서버 설정이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요."})
             return
 
         # ---------- 4. AI 호출 ----------
-        try:
-            client = anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT_SECONDS)
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": build_user_prompt(data)}]
+                }
+            ],
+            "generationConfig": {
+                # 답을 JSON 형식으로만 내놓게 하는 설정입니다.
+                "responseMimeType": "application/json",
+                "maxOutputTokens": MAX_TOKENS,
+                "temperature": 0.7
+            }
+        }
 
-            message = client.messages.create(
-                model=MODEL,
-                max_tokens=MAX_TOKENS,
-                system=SYSTEM_PROMPT,
-                messages=[
-                    {"role": "user", "content": build_user_prompt(data)}
-                ],
+        try:
+            response = requests.post(
+                API_URL,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                },
+                json=payload,
+                timeout=TIMEOUT_SECONDS
             )
 
-            text = message.content[0].text
+            if response.status_code != 200:
+                # 실제 오류 내용은 서버 기록(Vercel 로그)에만 남깁니다.
+                print("AI 응답 오류:", response.status_code, response.text[:500])
+                self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
+                return
+
+            body = response.json()
+            text = body["candidates"][0]["content"]["parts"][0]["text"]
+
+        except requests.exceptions.Timeout:
+            print("AI 호출 시간 초과")
+            self._send(504, {"error": "응답이 너무 늦었어요. 잠시 후 다시 시도해 주세요."})
+            return
 
         except Exception as error:
-            # 실제 오류 내용은 서버 기록(Vercel 로그)에만 남깁니다.
             # 사용자에게는 다음에 무엇을 하면 되는지만 알려 줍니다.
             print("AI 호출 실패:", repr(error))
             self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
