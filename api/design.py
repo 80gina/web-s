@@ -9,8 +9,9 @@ api/ 폴더에 두면 Vercel이 자동으로 위 주소를 만들어 줍니다.
 역할:
   1) 브라우저가 보낸 수업 조건을 받는다
   2) 환경 변수에서 API 키를 꺼낸다 (코드에 키를 적지 않는다)
-  3) Gemini에게 수업 설계를 요청한다
-  4) 결과를 JSON으로 돌려준다
+  3) 지금 쓸 수 있는 모델 이름을 알아낸다
+  4) Gemini에게 수업 설계를 요청한다
+  5) 결과를 JSON으로 돌려준다
 """
 
 import json
@@ -22,28 +23,17 @@ import requests
 
 # ---------- 설정 ----------
 
-# 사용할 모델 후보 목록.
-# 계정마다 쓸 수 있는 모델이 다르고 구글이 이름을 자주 바꾸기 때문에,
-# 하나만 적어두면 그 이름이 사라지는 순간 서비스가 멈춥니다.
-# 앞에서부터 시도하고, "그런 모델 없음(404)"이면 다음 후보로 넘어갑니다.
-MODEL_CANDIDATES = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-flash-latest",
-    "gemini-2.0-flash-001",
-    "gemini-1.5-flash",
-]
+BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 MAX_TOKENS = 4000               # 응답 최대 길이
 TIMEOUT_SECONDS = 25            # 이 시간을 넘기면 포기한다
 
-API_URL_FORM = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "{model}:generateContent"
-)
-
 # 필수 입력 항목 (브라우저에서도 검사하지만, 서버에서도 한 번 더 본다)
 REQUIRED_FIELDS = ["headcount", "ageGroup", "duration", "level", "menu"]
+
+# 한 번 알아낸 모델 이름을 기억해 둡니다.
+# 함수가 살아 있는 동안은 목록 조회를 다시 하지 않아 응답이 빨라집니다.
+_cached_model = None
 
 
 # ---------- AI에게 줄 지시문 ----------
@@ -110,6 +100,63 @@ def build_user_prompt(data):
     )
 
     return "\n".join(lines)
+
+
+def pick_model(api_key):
+    """지금 이 키로 쓸 수 있는 모델 이름을 알아냅니다.
+
+    모델 이름은 계정마다 다르고 시간이 지나면 바뀝니다.
+    코드에 이름을 박아두면 그 이름이 사라지는 순간 서비스가 멈추므로,
+    구글에게 "쓸 수 있는 목록"을 물어본 뒤 그 안에서 고릅니다.
+    """
+    global _cached_model
+
+    if _cached_model:
+        return _cached_model
+
+    response = requests.get(
+        BASE_URL + "/models",
+        headers={"x-goog-api-key": api_key},
+        timeout=10
+    )
+
+    if response.status_code != 200:
+        print("모델 목록 조회 실패:", response.status_code, response.text[:400])
+        return None
+
+    # 글을 생성할 수 있는 모델만 남깁니다.
+    # (이미지 전용, 임베딩 전용 모델은 여기서 걸러집니다)
+    usable = []
+    for item in response.json().get("models", []):
+        methods = item.get("supportedGenerationMethods", [])
+        if "generateContent" not in methods:
+            continue
+        usable.append(item["name"].split("/")[-1])
+
+    print("사용 가능한 모델:", usable)
+
+    if not usable:
+        return None
+
+    # 고르는 기준: 빠르고 저렴한 flash 계열을 먼저, 없으면 아무거나.
+    # 미리보기(preview)나 실험(exp) 버전은 불안정할 수 있어 뒤로 미룹니다.
+    def score(name):
+        point = 0
+        if "flash" in name:
+            point -= 10
+        if "lite" in name:
+            point -= 2
+        if "preview" in name or "exp" in name:
+            point += 20
+        if "thinking" in name or "image" in name or "tts" in name:
+            point += 30
+        return point
+
+    usable.sort(key=score)
+    _cached_model = usable[0]
+
+    print("고른 모델:", _cached_model)
+    return _cached_model
 
 
 def extract_json(text):
@@ -179,7 +226,18 @@ class handler(BaseHTTPRequestHandler):
             self._send(500, {"error": "서버 설정이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요."})
             return
 
-        # ---------- 4. AI 호출 ----------
+        # ---------- 4. 쓸 수 있는 모델 알아내기 ----------
+        try:
+            model = pick_model(api_key)
+        except Exception as error:
+            print("모델 조회 중 오류:", repr(error))
+            model = None
+
+        if not model:
+            self._send(502, {"error": "AI 연결에 실패했어요. 잠시 후 다시 시도해 주세요."})
+            return
+
+        # ---------- 5. AI 호출 ----------
         payload = {
             "system_instruction": {
                 "parts": [{"text": SYSTEM_PROMPT}]
@@ -199,35 +257,21 @@ class handler(BaseHTTPRequestHandler):
         }
 
         try:
-            response = None
+            response = requests.post(
+                "{base}/models/{model}:generateContent".format(
+                    base=BASE_URL, model=model
+                ),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": api_key
+                },
+                json=payload,
+                timeout=TIMEOUT_SECONDS
+            )
 
-            # 후보 모델을 앞에서부터 시도합니다.
-            for model_name in MODEL_CANDIDATES:
-                response = requests.post(
-                    API_URL_FORM.format(model=model_name),
-                    headers={
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": api_key
-                    },
-                    json=payload,
-                    timeout=TIMEOUT_SECONDS
-                )
-
-                if response.status_code == 200:
-                    print("사용한 모델:", model_name)
-                    break
-
-                # 404 = 그런 이름의 모델이 없음 -> 다음 후보로
-                if response.status_code == 404:
-                    print("모델 없음, 다음 후보로:", model_name)
-                    continue
-
-                # 그 밖의 오류는 모델을 바꿔도 해결되지 않으므로 멈춥니다
-                break
-
-            if response is None or response.status_code != 200:
+            if response.status_code != 200:
                 # 실제 오류 내용은 서버 기록(Vercel 로그)에만 남깁니다.
-                print("AI 응답 오류:", response.status_code, response.text[:500])
+                print("AI 응답 오류:", model, response.status_code, response.text[:500])
                 self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
                 return
 
@@ -245,7 +289,7 @@ class handler(BaseHTTPRequestHandler):
             self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
             return
 
-        # ---------- 5. 응답을 데이터로 바꾸기 ----------
+        # ---------- 6. 응답을 데이터로 바꾸기 ----------
         try:
             result = extract_json(text)
         except (ValueError, json.JSONDecodeError) as error:
@@ -254,5 +298,5 @@ class handler(BaseHTTPRequestHandler):
             self._send(502, {"error": "결과를 정리하지 못했어요. 다시 시도해 주세요."})
             return
 
-        # ---------- 6. 돌려주기 ----------
+        # ---------- 7. 돌려주기 ----------
         self._send(200, result)
