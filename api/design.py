@@ -22,13 +22,24 @@ import requests
 
 # ---------- 설정 ----------
 
-MODEL = "gemini-2.5-flash"      # 사용할 AI 모델
+# 사용할 모델 후보 목록.
+# 계정마다 쓸 수 있는 모델이 다르고 구글이 이름을 자주 바꾸기 때문에,
+# 하나만 적어두면 그 이름이 사라지는 순간 서비스가 멈춥니다.
+# 앞에서부터 시도하고, "그런 모델 없음(404)"이면 다음 후보로 넘어갑니다.
+MODEL_CANDIDATES = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+    "gemini-2.0-flash-001",
+    "gemini-1.5-flash",
+]
+
 MAX_TOKENS = 4000               # 응답 최대 길이
 TIMEOUT_SECONDS = 25            # 이 시간을 넘기면 포기한다
 
-API_URL = (
+API_URL_FORM = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "{model}:generateContent".format(model=MODEL)
+    "{model}:generateContent"
 )
 
 # 필수 입력 항목 (브라우저에서도 검사하지만, 서버에서도 한 번 더 본다)
@@ -188,17 +199,33 @@ class handler(BaseHTTPRequestHandler):
         }
 
         try:
-            response = requests.post(
-                API_URL,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": api_key
-                },
-                json=payload,
-                timeout=TIMEOUT_SECONDS
-            )
+            response = None
 
-            if response.status_code != 200:
+            # 후보 모델을 앞에서부터 시도합니다.
+            for model_name in MODEL_CANDIDATES:
+                response = requests.post(
+                    API_URL_FORM.format(model=model_name),
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": api_key
+                    },
+                    json=payload,
+                    timeout=TIMEOUT_SECONDS
+                )
+
+                if response.status_code == 200:
+                    print("사용한 모델:", model_name)
+                    break
+
+                # 404 = 그런 이름의 모델이 없음 -> 다음 후보로
+                if response.status_code == 404:
+                    print("모델 없음, 다음 후보로:", model_name)
+                    continue
+
+                # 그 밖의 오류는 모델을 바꿔도 해결되지 않으므로 멈춥니다
+                break
+
+            if response is None or response.status_code != 200:
                 # 실제 오류 내용은 서버 기록(Vercel 로그)에만 남깁니다.
                 print("AI 응답 오류:", response.status_code, response.text[:500])
                 self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
