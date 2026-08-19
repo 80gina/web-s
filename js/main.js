@@ -22,6 +22,7 @@ const formError  = document.getElementById("formError");
 const resultBox  = document.getElementById("result");
 const notes      = document.getElementById("notes");
 const notesCount = document.getElementById("notesCount");
+const savedList  = document.getElementById("savedList");
 
 
 /* ============================================
@@ -328,7 +329,18 @@ function renderResult(data) {
     html += '<p class="balance">' + escapeHtml(data.balance) + "</p>";
   }
 
+  /* ---- 저장 버튼 ---- */
+  html += '<div class="result-actions">';
+  html += '<button type="button" id="saveBtn" class="btn-outline">보관함에 저장</button>';
+  html += "</div>";
+
   resultBox.innerHTML = html;
+
+  // 방금 그린 결과를 저장할 수 있도록 연결합니다.
+  // innerHTML로 새로 만든 버튼이라 매번 다시 연결해야 합니다.
+  document.getElementById("saveBtn").addEventListener("click", function () {
+    saveDesign(data);
+  });
 }
 
 
@@ -417,3 +429,155 @@ contactForm.addEventListener("submit", function (event) {
   contactDone.classList.add("show");
   contactForm.reset();
 });
+
+
+/* ============================================
+   11. 내 보관함 — 브라우저에 결과 저장하기
+
+   서버에 저장하지 않고 브라우저 저장소를 씁니다.
+   - 로그인 없이 바로 쓸 수 있고
+   - 개인정보를 서버에 보관하는 책임이 생기지 않습니다
+   대신 다른 기기에서는 보이지 않습니다. (운영 가이드에 명시)
+   ============================================ */
+
+const STORAGE_KEY = "수업설계소.보관함";
+const MAX_SAVED = 20;          // 너무 쌓이면 저장 공간이 가득 찹니다
+
+/* 저장된 목록을 읽어옵니다.
+   저장소가 비어 있거나 내용이 깨졌을 때도 빈 배열을 돌려줍니다. */
+function loadSaved() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch (error) {
+    console.error("보관함을 읽지 못했습니다:", error);
+    return [];
+  }
+}
+
+/* 목록을 저장소에 씁니다. */
+function writeSaved(list) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    return true;
+  } catch (error) {
+    // 저장 공간이 가득 찬 경우 등
+    console.error("보관함에 쓰지 못했습니다:", error);
+    return false;
+  }
+}
+
+/* 날짜를 "8월 20일 오전 3:58" 형태로 만듭니다. */
+function formatDate(isoText) {
+  const date = new Date(isoText);
+  if (isNaN(date)) return "";
+
+  return date.toLocaleString("ko-KR", {
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+/* 결과를 보관함에 저장합니다. */
+function saveDesign(result) {
+  const list = loadSaved();
+
+  const item = {
+    id: String(Date.now()),        // 저장한 시각을 고유 번호로 씁니다
+    savedAt: new Date().toISOString(),
+    input: lastRequestData,        // 어떤 조건으로 만들었는지도 함께 남깁니다
+    result: result
+  };
+
+  list.unshift(item);              // 최신 것이 위로 오게
+
+  if (list.length > MAX_SAVED) {
+    list.length = MAX_SAVED;       // 오래된 것부터 잘라냅니다
+  }
+
+  if (!writeSaved(list)) {
+    alert("저장 공간이 부족해 보관하지 못했습니다. 보관함에서 오래된 항목을 지워 주세요.");
+    return;
+  }
+
+  renderSavedList();
+
+  const button = document.getElementById("saveBtn");
+  if (button) {
+    button.textContent = "보관함에 저장됨";
+    button.disabled = true;
+  }
+}
+
+/* 보관함 목록을 화면에 그립니다. */
+function renderSavedList() {
+  const list = loadSaved();
+
+  if (list.length === 0) {
+    savedList.innerHTML = "<p>저장된 설계가 없습니다. 수업을 설계한 뒤 저장해 보세요.</p>";
+    return;
+  }
+
+  let html = '<ul class="saved-items">';
+
+  list.forEach(function (item) {
+    const input = item.input || {};
+
+    html += '<li class="saved-item">';
+    html += '<div class="saved-info">';
+    html += '<p class="saved-title">' + escapeHtml(item.result.title) + "</p>";
+    html += '<p class="saved-meta">' +
+            escapeHtml(input.headcount) + "명 · " +
+            escapeHtml(input.duration) + "분 · " +
+            escapeHtml(input.ageGroup) + " · " +
+            escapeHtml(input.level) +
+            "</p>";
+    html += '<p class="saved-date">' + escapeHtml(formatDate(item.savedAt)) + "</p>";
+    html += "</div>";
+
+    html += '<div class="saved-buttons">';
+    html += '<button type="button" class="btn-small" data-open="' + escapeHtml(item.id) + '">보기</button>';
+    html += '<button type="button" class="btn-small btn-danger" data-remove="' + escapeHtml(item.id) + '">삭제</button>';
+    html += "</div>";
+    html += "</li>";
+  });
+
+  html += "</ul>";
+  savedList.innerHTML = html;
+}
+
+/* 보관함의 버튼 클릭을 한 곳에서 처리합니다.
+
+   목록은 저장할 때마다 다시 그려집니다.
+   버튼마다 따로 연결하면 다시 그릴 때마다 전부 다시 연결해야 하므로,
+   부모(savedList)에 한 번만 연결하고 어떤 버튼이 눌렸는지 확인하는 방식을 씁니다. */
+savedList.addEventListener("click", function (event) {
+  const openId = event.target.getAttribute("data-open");
+  const removeId = event.target.getAttribute("data-remove");
+
+  if (openId) {
+    const item = loadSaved().find(function (row) { return row.id === openId; });
+    if (!item) return;
+
+    lastRequestData = item.input;
+    renderResult(item.result);
+
+    // 결과가 그려진 수업 설계 섹션으로 이동합니다
+    document.getElementById("design").scrollIntoView({ behavior: "smooth" });
+    return;
+  }
+
+  if (removeId) {
+    const list = loadSaved().filter(function (row) { return row.id !== removeId; });
+    writeSaved(list);
+    renderSavedList();
+  }
+});
+
+/* 페이지가 열릴 때 보관함을 한 번 그립니다. */
+renderSavedList();

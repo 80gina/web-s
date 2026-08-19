@@ -300,7 +300,7 @@ self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도�
 | 저장소 | https://github.com/80gina/web-s |
 | 배포 주소 | https://web-s-one.vercel.app |
 | 개발 기간 | 2026-08-17 ~ 2026-08-20 |
-| 커밋 수 | 13개 |
+| 커밋 수 | 16개 |
 | AI 코딩 도구 | Claude (Cowork) |
 
 ### 참고

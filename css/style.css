@@ -733,3 +733,123 @@ textarea.invalid {
     grid-template-columns: 1fr;
   }
 }
+
+/* ============================================
+   13. 내 보관함
+   ============================================ */
+
+/* 결과 아래 저장 버튼 자리 */
+.result-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.btn-outline {
+  flex: 1;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--brand);
+  background: none;
+  border: 1px solid var(--brand);
+  border-radius: 8px;
+  padding: 13px 0;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.btn-outline:hover {
+  background: var(--brand);
+  color: #fff;
+}
+
+.btn-outline:disabled {
+  color: var(--text-soft);
+  border-color: var(--line);
+  background: var(--bg);
+  cursor: default;
+}
+
+/* 저장된 항목 목록 */
+.saved-items {
+  list-style: none;
+}
+
+.saved-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.saved-item:last-child {
+  border-bottom: none;
+}
+
+.saved-info {
+  min-width: 0;   /* 긴 제목이 옆 버튼을 밀어내지 않게 합니다 */
+}
+
+.saved-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.saved-meta {
+  font-size: 14px;
+  color: var(--text-soft);
+  margin-bottom: 2px;
+}
+
+.saved-date {
+  font-size: 13px;
+  color: var(--text-soft);
+  margin: 0;
+}
+
+.saved-buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-small {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn-small:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.btn-danger:hover {
+  border-color: #d0453b;
+  color: #d0453b;
+}
+
+/* 모바일에서는 정보와 버튼을 위아래로 배치합니다 */
+@media (max-width: 768px) {
+  .saved-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .saved-buttons .btn-small {
+    flex: 1;
+  }
+}
