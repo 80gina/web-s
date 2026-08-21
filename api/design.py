@@ -14,8 +14,10 @@ api/ 폴더에 두면 Vercel이 자동으로 위 주소를 만들어 줍니다.
   5) 결과를 JSON으로 돌려준다
 """
 
+import hashlib
 import json
 import os
+import time
 from http.server import BaseHTTPRequestHandler
 
 import requests
@@ -31,9 +33,71 @@ TIMEOUT_SECONDS = 25            # 이 시간을 넘기면 포기한다
 # 필수 입력 항목 (브라우저에서도 검사하지만, 서버에서도 한 번 더 본다)
 REQUIRED_FIELDS = ["headcount", "ageGroup", "duration", "level", "menu"]
 
-# 한 번 알아낸 모델 이름을 기억해 둡니다.
-# 함수가 살아 있는 동안은 목록 조회를 다시 하지 않아 응답이 빨라집니다.
-_cached_model = None
+# ---------- 호출 제한 설정 ----------
+# AI 호출은 건당 요금이 발생하고 하루 쿼터도 정해져 있습니다.
+# 배포 주소는 공개되어 있으므로, 누군가 반복 호출하면 쿼터가 순식간에 소진됩니다.
+RATE_LIMIT_WINDOW = 60     # 이 시간(초) 안에
+RATE_LIMIT_MAX = 10        # 최대 이 횟수까지만 허용
+
+CACHE_MAX = 20             # 결과를 최대 몇 개까지 기억할지
+
+
+# ---------- 함수가 살아 있는 동안 유지되는 값들 ----------
+# 서버리스 함수는 요청이 끝나도 잠시 대기 상태로 남아 있다가
+# 다음 요청이 오면 그대로 재사용됩니다. 그 사이에는 아래 값들이 유지됩니다.
+#
+# 다만 오래 요청이 없으면 함수가 종료되고 값도 사라집니다.
+# 즉 이 방식은 "확실한 보관"이 아니라 "있으면 이득"인 성격입니다.
+# 확실한 제한이 필요하면 외부 저장소가 있어야 하지만,
+# 이 서비스 규모에서는 과한 구성이라고 판단했습니다.
+
+_cached_model = None       # 한 번 알아낸 모델 이름
+_result_cache = {}         # 입력 → 결과
+_cache_keys = []           # 오래된 것부터 지우기 위한 순서 기록
+_call_times = []           # 최근 호출 시각들
+
+
+def make_cache_key(data):
+    """같은 조건인지 판단할 열쇠를 만듭니다.
+
+    입력값을 하나의 문자열로 이어 붙인 뒤 짧은 지문으로 바꿉니다.
+    앞뒤 공백과 대소문자 차이는 같은 것으로 봅니다.
+    """
+    parts = [
+        str(data.get("headcount", "")).strip(),
+        str(data.get("ageGroup", "")).strip(),
+        str(data.get("duration", "")).strip(),
+        str(data.get("level", "")).strip(),
+        str(data.get("menu", "")).strip().lower(),
+        str(data.get("notes", "")).strip().lower(),
+    ]
+    joined = "|".join(parts)
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
+
+
+def is_rate_limited():
+    """최근 호출이 너무 잦은지 확인합니다."""
+    now = time.time()
+
+    # 시간이 지난 기록은 목록에서 지웁니다
+    while _call_times and now - _call_times[0] > RATE_LIMIT_WINDOW:
+        _call_times.pop(0)
+
+    if len(_call_times) >= RATE_LIMIT_MAX:
+        return True
+
+    _call_times.append(now)
+    return False
+
+
+def remember_result(key, result):
+    """결과를 기억해 둡니다. 너무 많이 쌓이면 오래된 것부터 지웁니다."""
+    _result_cache[key] = result
+    _cache_keys.append(key)
+
+    while len(_cache_keys) > CACHE_MAX:
+        oldest = _cache_keys.pop(0)
+        _result_cache.pop(oldest, None)
 
 
 # ---------- AI에게 줄 지시문 ----------
@@ -219,14 +283,32 @@ class handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "입력값이 부족합니다. 모든 필수 항목을 채워 주세요."})
                 return
 
-        # ---------- 3. API 키 꺼내기 ----------
+        # ---------- 3. 같은 요청을 이미 처리했는지 확인 ----------
+        # 같은 조건이면 AI를 다시 부르지 않고 기억해 둔 결과를 돌려줍니다.
+        # 요금이 들지 않고, 응답도 즉시 나갑니다.
+        cache_key = make_cache_key(data)
+
+        if cache_key in _result_cache:
+            print("기억해 둔 결과 사용:", cache_key[:8])
+            self._send(200, _result_cache[cache_key])
+            return
+
+        # ---------- 4. 호출이 너무 잦은지 확인 ----------
+        if is_rate_limited():
+            print("호출 제한에 걸렸습니다.")
+            self._send(429, {
+                "error": "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."
+            })
+            return
+
+        # ---------- 5. API 키 꺼내기 ----------
         # 코드에 키를 적지 않고, 실행 환경에서 꺼내 씁니다.
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             self._send(500, {"error": "서버 설정이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요."})
             return
 
-        # ---------- 4. 쓸 수 있는 모델 알아내기 ----------
+        # ---------- 6. 쓸 수 있는 모델 알아내기 ----------
         try:
             model = pick_model(api_key)
         except Exception as error:
@@ -237,7 +319,7 @@ class handler(BaseHTTPRequestHandler):
             self._send(502, {"error": "AI 연결에 실패했어요. 잠시 후 다시 시도해 주세요."})
             return
 
-        # ---------- 5. AI 호출 ----------
+        # ---------- 7. AI 호출 ----------
         payload = {
             "system_instruction": {
                 "parts": [{"text": SYSTEM_PROMPT}]
@@ -289,7 +371,7 @@ class handler(BaseHTTPRequestHandler):
             self._send(502, {"error": "설계에 실패했어요. 잠시 후 다시 시도해 주세요."})
             return
 
-        # ---------- 6. 응답을 데이터로 바꾸기 ----------
+        # ---------- 8. 응답을 데이터로 바꾸기 ----------
         try:
             result = extract_json(text)
         except (ValueError, json.JSONDecodeError) as error:
@@ -298,5 +380,6 @@ class handler(BaseHTTPRequestHandler):
             self._send(502, {"error": "결과를 정리하지 못했어요. 다시 시도해 주세요."})
             return
 
-        # ---------- 7. 돌려주기 ----------
+        # ---------- 9. 기억해 두고 돌려주기 ----------
+        remember_result(cache_key, result)
         self._send(200, result)
