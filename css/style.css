@@ -993,3 +993,48 @@ textarea.invalid {
     margin: 15mm;
   }
 }
+
+/* ============================================
+   15. 음성 입력 버튼
+
+   지원하지 않는 브라우저에서는 이 버튼이 아예 만들어지지 않습니다.
+   (JavaScript에서 지원 여부를 먼저 확인)
+   ============================================ */
+
+.btn-voice {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-soft);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 13px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.btn-voice:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+/* 듣는 중일 때 — 멈춰 있지 않다는 것을 눈으로 알 수 있게 합니다 */
+.btn-voice.listening {
+  color: #a8352c;
+  border-color: #d0453b;
+  background: #fdf1f0;
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* 인쇄물에는 버튼이 나오지 않게 합니다 */
+@media print {
+  .btn-voice {
+    display: none !important;
+  }
+}

@@ -435,7 +435,126 @@ contactForm.addEventListener("submit", function (event) {
 
 
 /* ============================================
-   11. 인쇄 · PDF 저장
+   11. 음성 입력 (Web Speech API)
+
+   강사는 수업 준비 중에 손이 젖어 있거나 짐을 들고 있는 경우가 많습니다.
+   말로 입력할 수 있으면 실제 사용 상황과 맞습니다.
+
+   브라우저에 들어 있는 기능이라 추가 비용도, 내려받을 파일도 없습니다.
+   다만 Firefox 등 일부 브라우저는 지원하지 않으므로,
+   지원 여부를 먼저 확인하고 안 되는 경우에는 버튼을 아예 만들지 않습니다.
+   (눌러도 반응 없는 버튼은 "고장났나?"라는 오해를 만듭니다)
+   ============================================ */
+
+/* 브라우저마다 이름이 달라서 둘 다 확인합니다 */
+const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition;
+
+/* 음성으로 채울 입력칸과 안내 문구 */
+const VOICE_TARGETS = [
+  { id: "menu",  label: "만들 음식을 말씀해 주세요" },
+  { id: "notes", label: "특이사항을 말씀해 주세요" }
+];
+
+let activeRecognition = null;   // 지금 듣고 있는 것 (한 번에 하나만)
+
+function setupVoiceInput() {
+  // 지원하지 않는 브라우저면 여기서 조용히 끝냅니다.
+  // 버튼이 생기지 않으므로 사용자는 없는 기능을 기다리지 않습니다.
+  if (!SpeechRecognition) {
+    console.log("이 브라우저는 음성 입력을 지원하지 않습니다.");
+    return;
+  }
+
+  VOICE_TARGETS.forEach(function (target) {
+    const field = document.getElementById(target.id);
+    if (!field) return;
+
+    const button = document.createElement("button");
+    button.type = "button";           // 폼 안에 있으므로 제출 방지
+    button.className = "btn-voice";
+    button.textContent = "🎤 말로 입력";
+    button.setAttribute("aria-label", target.label);
+
+    // 입력칸 바로 아래에 버튼을 놓습니다
+    field.parentNode.insertBefore(button, field.nextSibling);
+
+    button.addEventListener("click", function () {
+      startListening(field, button, target.label);
+    });
+  });
+}
+
+function startListening(field, button, label) {
+  // 이미 듣고 있으면 멈춥니다 (버튼을 다시 누른 경우)
+  if (activeRecognition) {
+    activeRecognition.stop();
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+
+  recognition.lang = "ko-KR";          // 한국어로 알아듣게 합니다
+  recognition.interimResults = true;   // 말하는 도중에도 중간 결과를 보여줍니다
+  recognition.continuous = false;      // 한 문장 말하면 자동으로 멈춥니다
+
+  const originalText = field.value;
+
+  recognition.addEventListener("start", function () {
+    activeRecognition = recognition;
+    button.textContent = "🔴 듣는 중… (누르면 중지)";
+    button.classList.add("listening");
+    field.placeholder = label;
+  });
+
+  recognition.addEventListener("result", function (event) {
+    // 중간 결과와 최종 결과를 모두 이어 붙입니다
+    let text = "";
+    for (let i = 0; i < event.results.length; i++) {
+      text += event.results[i][0].transcript;
+    }
+
+    // 원래 있던 내용 뒤에 덧붙입니다 (기존 입력을 지우지 않기 위해)
+    field.value = originalText
+      ? originalText + " " + text
+      : text;
+
+    // 글자 수 표시가 있는 칸이면 함께 갱신합니다
+    if (field.id === "notes") {
+      notesCount.textContent = field.value.length;
+    }
+  });
+
+  recognition.addEventListener("error", function (event) {
+    console.error("음성 인식 오류:", event.error);
+
+    // 마이크 권한을 거부한 경우에만 따로 안내합니다.
+    // 나머지(소리 없음 등)는 사용자가 다시 누르면 되므로 조용히 넘어갑니다.
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      alert("마이크 사용이 허용되지 않았습니다.\n브라우저 주소창 왼쪽의 자물쇠 아이콘에서 마이크를 허용해 주세요.");
+    }
+  });
+
+  recognition.addEventListener("end", function () {
+    activeRecognition = null;
+    button.textContent = "🎤 말로 입력";
+    button.classList.remove("listening");
+    field.placeholder = field.dataset.placeholder || "";
+  });
+
+  // 원래 안내 문구를 기억해 두었다가 끝나면 되돌립니다
+  if (!field.dataset.placeholder) {
+    field.dataset.placeholder = field.placeholder;
+  }
+
+  recognition.start();
+}
+
+setupVoiceInput();
+
+
+/* ============================================
+   12. 인쇄 · PDF 저장
 
    PDF 생성 라이브러리를 쓰지 않고 브라우저 인쇄 기능을 씁니다.
    - 한글 폰트를 따로 넣지 않아도 됩니다 (라이브러리 방식의 가장 큰 걸림돌)
@@ -480,7 +599,7 @@ function printResult() {
 
 
 /* ============================================
-   12. 내 보관함 — 브라우저에 결과 저장하기
+   13. 내 보관함 — 브라우저에 결과 저장하기
 
    서버에 저장하지 않고 브라우저 저장소를 씁니다.
    - 로그인 없이 바로 쓸 수 있고
